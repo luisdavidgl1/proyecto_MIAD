@@ -5,6 +5,7 @@ from dash.dependencies import Input, Output, State
 import plotly.graph_objs as go
 import numpy as np
 import pandas as pd
+import openpyxl
 import datetime as dt
 import requests
 import json
@@ -22,26 +23,25 @@ server = app.server
 
 # Cargar datos de ejemplo (reemplaza con tus propios datos)
 def load_data():
-    # Datos de ejemplo - reemplazar con tu propia carga de datos
-    timestamps = [datetime.now() - timedelta(hours=i) for i in range(24)][::-1]
+    clientes = pd.read_excel('./DATOSCONTUGAS.xlsx', sheet_name=None)  # None carga todas las hojas
+    # Inicializar una lista para cargar los dataframe
+    df = []
 
-# Dataset de prueba con patrones intencionales para disparar alertas
-    data = pd.DataFrame({
-        'timestamp': timestamps,
-        'presion': [16.5, 16.3, 16.1, 15.8, 15.5, 15.2, 14.9, 14.6, 14.3, 14.0,  # Presión descendente <15
-                    13.7, 13.4, 17.0, 19.0, 20.0, 19.5, 18.0, 17.5, 17.0, 16.5,   # Recuperación
-                    16.0, 15.5, 17.8, 14.2],                                      # Variabilidad final
-        
-        'temperatura': [32.0, 32.1, 32.3, 32.5, 32.8, 33.0, 33.2, 33.5, 33.8, 34.0,
-                        34.2, 34.5, 34.8, 35.1, 35.5, 36.0, 36.5, 37.0, 37.5, 38.0,  # >35°C
-                        36.0, 34.0, 32.0, 35.5],                                   # Fluctuación
-        
-        'volumen': np.concatenate([
-            np.random.normal(100, 5, 18),  # Valores normales
-            [150, 160, 170, 180, 190, 200] # Valores extremos (>2σ)
-        ])[-24:]  # Tomamos los últimos 24 valores
-    })
-    return data
+    # Crear columna con el nombre del cliente
+    for nombre_cliente, df_cliente in clientes.items():
+        df_cliente['CLIENTE'] = nombre_cliente  # Agregar columna con nombre del cliente
+        df.append(df_cliente)
+
+    # Unir todos los DataFrames en uno solo
+    df = pd.concat(df, ignore_index=True)
+
+    df['anio'] = df['Fecha'].dt.year
+    df['mes'] = df['Fecha'].dt.month
+    df['dia'] = df['Fecha'].dt.day
+    df['hora'] = df['Fecha'].dt.hour
+    df['dia_semana'] = df['Fecha'].dt.dayofweek
+    
+    return df
 
 data = load_data()
 
@@ -68,9 +68,9 @@ def generate_filters():
                             html.P("Año"),
                             dcc.Dropdown(
                                 id="anio-dropdown",
-                                options=[{'label': 2025, 'value': 2025}],
+                                options=[{'label': anio, 'value': anio} for anio in data['anio'].unique()],
                                 placeholder="Seleccione un Año",
-                                value= [2025],
+                                value= [data['anio'].unique()[0]],
                                 multi = True,
                                 style=dict(width='50%', minWidth='300px')
                             )
@@ -83,9 +83,9 @@ def generate_filters():
                             html.P("Mes"),
                             dcc.Dropdown(
                                 id="mes-dropdown",
-                                options=[{'label': 5, 'value': 5}],
-                                placeholder="Seleccione uno o varios Mes",
-                                value=[5],
+                                options=[{'label': mes, 'value': mes} for mes in data['mes'].unique()],
+                                placeholder="Seleccione un Mes",
+                                value=[data['mes'].unique()[0]],
                                 multi = True,
                                 style=dict(width='50%', minWidth='300px')
                             )
@@ -98,9 +98,9 @@ def generate_filters():
                             html.P("Día"),
                             dcc.Dropdown(
                                 id="dia-dropdown",
-                                options=[{'label': 14, 'value': 14}],
-                                placeholder="Seleccione una Unidad de Negocio",
-                                value=[14],
+                                options=[{'label': dia, 'value': dia} for dia in data['dia'].unique()],
+                                placeholder="Seleccione un día",
+                                value=[data['dia'].unique()[0]],
                                 multi = True,
                                 style=dict(width='50%', minWidth='300px')
                             )
@@ -114,9 +114,9 @@ def generate_filters():
                             html.P("Rango_Horario"),
                             dcc.Dropdown(
                                 id="horario-dropdown",
-                                options=[{'label': "12-13", 'value': "12-13"} ],
-                                placeholder="Seleccione un canal",
-                                value=["12-13"],
+                                options=[{'label': hora, 'value': hora} for hora in data['hora'].unique()],
+                                placeholder="Seleccione un horario",
+                                value=[data['hora'].unique()[0]],
                                 multi = True,
                                 style=dict(width='50%', minWidth='300px')
                             )
@@ -130,9 +130,9 @@ def generate_filters():
                             html.P("Cliente"),
                             dcc.Dropdown(
                                 id="cliente-dropdown",
-                                options=[{'label': "cliente1", 'value': "cliente1"}],
-                                placeholder="Seleccione una Regional",
-                                value=["cliente1"],
+                                options=[{'label': cliente, 'value': cliente} for cliente in data['CLIENTE'].unique()],
+                                placeholder="Seleccione un cliente",
+                                value=[data['CLIENTE'].unique()[0]],
                                 multi = True,
                                 style=dict(width='50%', minWidth='300px')
                             )
@@ -294,10 +294,111 @@ def generar_alertas(data, ultimo_estado=None):
     
     return alertas, ultimos_valores
 
+def plot_time_series_volumen(data, anio, mes, dia, horario, cliente):
+
+    data_ad = data[(data['anio'].isin(anio)) & (data['mes'].isin(mes)) & (data['dia'].isin(dia)) & 
+                      (data['hora'].isin(horario)) & (data['CLIENTE'].isin(cliente))]
+    serie_volumen = data_ad.groupby('Fecha')['Volumen'].sum().reset_index()
+
+    fig = go.Figure(
+        data=[
+            go.Scatter(
+                x=serie_volumen['Fecha'],
+                y=serie_volumen['Volumen'],
+                mode = 'lines+markers',
+                line=dict(color="#3498db"),
+                name="Volumen por Fecha"
+            )
+        ]
+    )
+
+    # Configuración del diseño del gráfico
+    fig.update_layout(
+        title="Histórico de Volumen m3",
+        xaxis_title="Fecha",
+        yaxis_title="Volumen m3",
+        paper_bgcolor="rgba(0,0,0,0)",  # Fondo transparente (usa color hexadecimal si prefieres)
+        plot_bgcolor="#E8E8E8",  # Fondo del área de la gráfica
+        font=dict(color="#FFFFFF"),  # Color de texto de los ejes y título
+        xaxis = dict(   tickformat="%Y-%m",  # Formato de fecha para mostrar año y mes
+                        tickangle=45
+                        )  # Ángulo para evitar solapamiento de fechas)
+    )
+
+    return fig
+
+def plot_time_series_temperatura(data, anio, mes, dia, horario, cliente):
+
+    data_ad = data[(data['anio'].isin(anio)) & (data['mes'].isin(mes)) & (data['dia'].isin(dia)) & 
+                      (data['hora'].isin(horario)) & (data['CLIENTE'].isin(cliente))]
+    serie_temperatura = data_ad.groupby('Fecha')['Temperatura'].sum().reset_index()
+
+    fig = go.Figure(
+        data=[
+            go.Scatter(
+                x=serie_temperatura['Fecha'],
+                y=serie_temperatura['Temperatura'],
+                mode = 'lines+markers',
+                line=dict(color="#3498db"),
+                name="Temperatura por Fecha"
+            )
+        ]
+    )
+
+    # Configuración del diseño del gráfico
+    fig.update_layout(
+        title="Histórico de Temperatura m3",
+        xaxis_title="Fecha",
+        yaxis_title="Temperatura m3",
+        paper_bgcolor="rgba(0,0,0,0)",  # Fondo transparente (usa color hexadecimal si prefieres)
+        plot_bgcolor="#E8E8E8",  # Fondo del área de la gráfica
+        font=dict(color="#FFFFFF"),  # Color de texto de los ejes y título
+        xaxis = dict(   tickformat="%Y-%m",  # Formato de fecha para mostrar año y mes
+                        tickangle=45
+                        )  # Ángulo para evitar solapamiento de fechas)
+    )
+
+    return fig
+
+def plot_time_series_presion(data, anio, mes, dia, horario, cliente):
+
+    data_ad = data[(data['anio'].isin(anio)) & (data['mes'].isin(mes)) & (data['dia'].isin(dia)) & 
+                      (data['hora'].isin(horario)) & (data['CLIENTE'].isin(cliente))]
+    serie_presion = data_ad.groupby('Fecha')['Presion'].sum().reset_index()
+
+    fig = go.Figure(
+        data=[
+            go.Scatter(
+                x=serie_presion['Fecha'],
+                y=serie_presion['Presion'],
+                mode = 'lines+markers',
+                line=dict(color="#3498db"),
+                name="Presion por Fecha"
+            )
+        ]
+    )
+
+    # Configuración del diseño del gráfico
+    fig.update_layout(
+        title="Histórico de Presión m3",
+        xaxis_title="Fecha",
+        yaxis_title="Presión m3",
+        paper_bgcolor="rgba(0,0,0,0)",  # Fondo transparente (usa color hexadecimal si prefieres)
+        plot_bgcolor="#E8E8E8",  # Fondo del área de la gráfica
+        font=dict(color="#FFFFFF"),  # Color de texto de los ejes y título
+        xaxis = dict(   tickformat="%Y-%m",  # Formato de fecha para mostrar año y mes
+                        tickangle=45
+                        )  # Ángulo para evitar solapamiento de fechas)
+    )
+
+    return fig
+
 # Layout del dashboard
 app.layout = html.Div(
     id="app-container",
     children=[
+    #dcc.Interval(id="interval", interval=1000, n_intervals=0),
+
     # Header con logo y título centrado
     html.Div(
             id="brand-section",
@@ -530,57 +631,76 @@ app.layout = html.Div(
     ]
 )
 
-@app.callback(
-    [Output('alert-container', 'children'),
-     Output('alert-store', 'data')],
-    [Input('alert-interval', 'n_intervals'),
-     #Input('datos-filtrados', 'data')
-     ],  # Asume que tienes un Store con los datos
-    [State('alert-store', 'data')]
-)
-def actualizar_alertas(n_intervals, alertas_anteriores):
+# @app.callback(
+#     [Output('alert-container', 'children'),
+#      Output('alert-store', 'data')],
+#     [Input('alert-interval', 'n_intervals'),
+#      #Input('datos-filtrados', 'data')
+#      ],  # Asume que tienes un Store con los datos
+#     [State('alert-store', 'data')]
+# )
+# def actualizar_alertas(n_intervals, alertas_anteriores):
  
-    # Generar nuevas alertas
-    nuevas_alertas, ultimos_valores = generar_alertas(data)
+#     # Generar nuevas alertas
+#     nuevas_alertas, ultimos_valores = generar_alertas(data)
     
-    # Combinar con alertas anteriores (limitar a las últimas 20)
-    todas_alertas = (nuevas_alertas + alertas_anteriores)[:20]
+#     # Combinar con alertas anteriores (limitar a las últimas 20)
+#     todas_alertas = (nuevas_alertas + alertas_anteriores)[:20]
     
-    # Generar elementos HTML para las alertas
-    alertas_html = []
-    for alerta in todas_alertas:
-        alerta_html = html.Div(
-            style={
-                "padding": "10px",
-                "marginBottom": "8px",
-                "borderLeft": f"4px solid {alerta['color']}",
-                "backgroundColor": "#252525",
-                "display": "flex",
-                "alignItems": "center"
-            },
-            children=[
-                html.Span(
-                    alerta['icono'],
-                    style={"fontSize": "20px", "marginRight": "10px"}
-                ),
-                html.Div(
-                    children=[
-                        html.Strong(
-                            f"{alerta['tipo']}: ",
-                            style={"color": alerta['color']}
-                        ),
-                        html.Span(alerta['mensaje'])
-                    ]
-                )
-            ]
-        )
-        alertas_html.append(alerta_html)
+#     # Generar elementos HTML para las alertas
+#     alertas_html = []
+#     for alerta in todas_alertas:
+#         alerta_html = html.Div(
+#             style={
+#                 "padding": "10px",
+#                 "marginBottom": "8px",
+#                 "borderLeft": f"4px solid {alerta['color']}",
+#                 "backgroundColor": "#252525",
+#                 "display": "flex",
+#                 "alignItems": "center"
+#             },
+#             children=[
+#                 html.Span(
+#                     alerta['icono'],
+#                     style={"fontSize": "20px", "marginRight": "10px"}
+#                 ),
+#                 html.Div(
+#                     children=[
+#                         html.Strong(
+#                             f"{alerta['tipo']}: ",
+#                             style={"color": alerta['color']}
+#                         ),
+#                         html.Span(alerta['mensaje'])
+#                     ]
+#                 )
+#             ]
+#         )
+#         alertas_html.append(alerta_html)
     
-    if not alertas_html:
-        return [html.Div("No hay alertas recientes", style={"color": "#777"})], []
+#     if not alertas_html:
+#         return [html.Div("No hay alertas recientes", style={"color": "#777"})], []
     
-    return alertas_html, todas_alertas
+#     return alertas_html, todas_alertas
         
+@app.callback(
+    [Output(component_id="plot_time_series_1", component_property="figure"),
+     Output(component_id="plot_time_series_2", component_property="figure"),
+     Output(component_id="plot_time_series_3", component_property="figure")],
+    [#Input("interval", "n_intervals"),
+     Input(component_id="anio-dropdown", component_property="value"),
+     Input(component_id="mes-dropdown", component_property="value"),
+     Input(component_id="dia-dropdown", component_property="value"),
+     Input(component_id="horario-dropdown", component_property="value"),
+     Input(component_id="cliente-dropdown", component_property="value")
+     ]
+)
+def update_output_div(anio, mes, dia, horario, cliente):
+
+    fig1 = plot_time_series_volumen(data, anio, mes, dia, horario, cliente)
+    fig2 = plot_time_series_temperatura(data, anio, mes, dia, horario, cliente)
+    fig3 = plot_time_series_presion(data, anio, mes, dia, horario, cliente)
+
+    return fig1, fig2, fig3
 
 if __name__ == "__main__":
     logger.info("Running dash")
