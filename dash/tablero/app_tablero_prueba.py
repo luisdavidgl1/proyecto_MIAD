@@ -393,6 +393,135 @@ def plot_time_series_presion(data, anio, mes, dia, horario, cliente):
 
     return fig
 
+def plot_bar_volumen_ultimos_7d(data):
+
+    fecha_max = max(data['Fecha'])
+    fecha_inicio = fecha_max - pd.Timedelta(days=7)
+
+    data_reciente = data[data['Fecha'] >= fecha_inicio]
+    promedios = data_reciente.groupby('CLIENTE')['Volumen'].mean().reset_index()
+    promedios['num_cliente'] = promedios['CLIENTE'].str.extract('(\d+)').astype(int)
+    promedios = promedios.sort_values('num_cliente')
+    
+    # Crear gráfico de barras
+    fig = go.Figure(
+        data=[
+            go.Bar(
+                x=promedios['CLIENTE'],
+                y=promedios['Volumen'],
+                marker_color="#3498db",
+                text=promedios['Volumen'].round(2),
+                textposition='auto',
+                name='Promedio 7d'
+            )
+        ]
+    )
+    
+    # Configuración del diseño
+    fig.update_layout(
+        title={
+            'text': "Promedio de Volumen (Últimos 7 días) por Cliente",
+            'x': 0.5,
+            'xanchor': 'center',
+            'font': dict(size=16, color="#FFFFFF")  # Opcional: estilo de fuente
+        },
+        xaxis_title="Cliente",
+        yaxis_title="Volumen Promedio",
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="#E8E8E8",
+        font=dict(color="#FFFFFF"),
+        xaxis=dict(tickangle=45),
+        hovermode="x"
+    )
+    
+    return fig
+
+def plot_bar_temperatura_ultimos_7d(data):
+
+    fecha_max = max(data['Fecha'])
+    fecha_inicio = fecha_max - pd.Timedelta(days=7)
+
+    data_reciente = data[data['Fecha'] >= fecha_inicio]
+    promedios = data_reciente.groupby('CLIENTE')['Temperatura'].mean().reset_index()
+    promedios['num_cliente'] = promedios['CLIENTE'].str.extract('(\d+)').astype(int)
+    promedios = promedios.sort_values('num_cliente')
+    
+    # Crear gráfico de barras
+    fig = go.Figure(
+        data=[
+            go.Bar(
+                x=promedios['CLIENTE'],
+                y=promedios['Temperatura'],
+                marker_color="#3498db",
+                text=promedios['Temperatura'].round(2),
+                textposition='auto',
+                name='Promedio 7d'
+            )
+        ]
+    )
+    
+    # Configuración del diseño
+    fig.update_layout(
+        title={
+            'text': "Promedio de Temperatura (Últimos 7 días) por Cliente",
+            'x': 0.5,
+            'xanchor': 'center',
+            'font': dict(size=16, color="#FFFFFF")  # Opcional: estilo de fuente
+        },
+        xaxis_title="Cliente",
+        yaxis_title="Temperatura Promedio",
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="#E8E8E8",
+        font=dict(color="#FFFFFF"),
+        xaxis=dict(tickangle=45),
+        hovermode="x"
+    )
+    
+    return fig
+
+def plot_bar_presion_ultimos_7d(data):
+
+    fecha_max = max(data['Fecha'])
+    fecha_inicio = fecha_max - pd.Timedelta(days=7)
+
+    data_reciente = data[data['Fecha'] >= fecha_inicio]
+    promedios = data_reciente.groupby('CLIENTE')['Presion'].mean().reset_index()
+    promedios['num_cliente'] = promedios['CLIENTE'].str.extract('(\d+)').astype(int)
+    promedios = promedios.sort_values('num_cliente')
+    
+    # Crear gráfico de barras
+    fig = go.Figure(
+        data=[
+            go.Bar(
+                x=promedios['CLIENTE'],
+                y=promedios['Presion'],
+                marker_color="#3498db",
+                text=promedios['Presion'].round(2),
+                textposition='auto',
+                name='Promedio 7d'
+            )
+        ]
+    )
+    
+    # Configuración del diseño
+    fig.update_layout(
+        title={
+            'text': "Promedio de Presión (Últimos 7 días) por Cliente",
+            'x': 0.5,
+            'xanchor': 'center',
+            'font': dict(size=16, color="#FFFFFF")  # Opcional: estilo de fuente
+        },
+        xaxis_title="Cliente",
+        yaxis_title="Presión Promedio",
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="#E8E8E8",
+        font=dict(color="#FFFFFF"),
+        xaxis=dict(tickangle=45),
+        hovermode="x"
+    )
+    
+    return fig
+
 # Layout del dashboard
 app.layout = html.Div(
     id="app-container",
@@ -685,7 +814,10 @@ app.layout = html.Div(
 @app.callback(
     [Output(component_id="plot_time_series_1", component_property="figure"),
      Output(component_id="plot_time_series_2", component_property="figure"),
-     Output(component_id="plot_time_series_3", component_property="figure")],
+     Output(component_id="plot_time_series_3", component_property="figure"),
+     Output(component_id="plot_series_1", component_property="figure"),
+     Output(component_id="plot_series_2", component_property="figure"),
+     Output(component_id="plot_series_3", component_property="figure")],
     [#Input("interval", "n_intervals"),
      Input(component_id="anio-dropdown", component_property="value"),
      Input(component_id="mes-dropdown", component_property="value"),
@@ -699,8 +831,11 @@ def update_output_div(anio, mes, dia, horario, cliente):
     fig1 = plot_time_series_volumen(data, anio, mes, dia, horario, cliente)
     fig2 = plot_time_series_temperatura(data, anio, mes, dia, horario, cliente)
     fig3 = plot_time_series_presion(data, anio, mes, dia, horario, cliente)
+    fig4 = plot_bar_volumen_ultimos_7d(data)
+    fig5 = plot_bar_temperatura_ultimos_7d(data)
+    fig6 = plot_bar_presion_ultimos_7d(data)
 
-    return fig1, fig2, fig3
+    return fig1, fig2, fig3, fig4, fig5, fig6
 
 if __name__ == "__main__":
     logger.info("Running dash")
