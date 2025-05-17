@@ -49,6 +49,9 @@ def generate_filters():
     """
     :return: A Div dropdown lists for filters.
     """
+    min_date = data['Fecha'].min()
+    max_date = data['Fecha'].max()
+
     return html.Div(
         id="filters",
         children=[
@@ -61,51 +64,22 @@ def generate_filters():
             html.Div(
                 id="componentes-filtros",
                 children=[
-                    
                     html.Div(
-                        id="componente-anio",
+                        id="componente-rango-fechas",
                         children=[
-                            html.P("Año"),
-                            dcc.Dropdown(
-                                id="anio-dropdown",
-                                options=[{'label': anio, 'value': anio} for anio in data['anio'].unique()],
-                                placeholder="Seleccione un Año",
-                                value= [data['anio'].unique()[0]],
-                                multi = True,
-                                style=dict(width='50%', minWidth='300px')
+                            html.P("Rango_de_Fechas"),
+                            dcc.DatePickerRange(
+                                id='date-picker-range',
+                                min_date_allowed=min_date,
+                                max_date_allowed=max_date,
+                                initial_visible_month=min_date,
+                                start_date=min_date,
+                                end_date=max_date,
+                                display_format='YYYY-MM-DD',
+                                style={'width': '100%', 'color': '#333'}
                             )
                         ],
-                        style=dict(width='20%')
-                    ),
-                    html.Div(
-                        id="componente-mes",
-                        children=[
-                            html.P("Mes"),
-                            dcc.Dropdown(
-                                id="mes-dropdown",
-                                options=[{'label': mes, 'value': mes} for mes in data['mes'].unique()],
-                                placeholder="Seleccione un Mes",
-                                value=[data['mes'].unique()[0]],
-                                multi = True,
-                                style=dict(width='50%', minWidth='300px')
-                            )
-                        ],
-                        style=dict(width='20%')
-                    ),
-                    html.Div(
-                        id="componente-dia",
-                        children=[
-                            html.P("Día"),
-                            dcc.Dropdown(
-                                id="dia-dropdown",
-                                options=[{'label': dia, 'value': dia} for dia in data['dia'].unique()],
-                                placeholder="Seleccione un día",
-                                value=[data['dia'].unique()[0]],
-                                multi = True,
-                                style=dict(width='50%', minWidth='300px')
-                            )
-                        ],
-                        style=dict(width='20%')
+                        style=dict(width='30%', marginBottom='15px')
                     ),
 
                     html.Div(
@@ -294,10 +268,10 @@ def generar_alertas(data, ultimo_estado=None):
     
     return alertas, ultimos_valores
 
-def plot_time_series_volumen(data, anio, mes, dia, horario, cliente):
+def plot_time_series_volumen(data, start_date, end_date, horario, cliente):
 
-    data_ad = data[(data['anio'].isin(anio)) & (data['mes'].isin(mes)) & (data['dia'].isin(dia)) & 
-                      (data['hora'].isin(horario)) & (data['CLIENTE'].isin(cliente))]
+    data_ad = data[(data['Fecha'] >= start_date) & (data['Fecha'] <= end_date)]
+    data_ad = data_ad[(data_ad['hora'].isin(horario)) & (data_ad['CLIENTE'].isin(cliente))]
     serie_volumen = data_ad.groupby('Fecha')['Volumen'].sum().reset_index()
 
     fig = go.Figure(
@@ -327,10 +301,10 @@ def plot_time_series_volumen(data, anio, mes, dia, horario, cliente):
 
     return fig
 
-def plot_time_series_temperatura(data, anio, mes, dia, horario, cliente):
+def plot_time_series_temperatura(data, start_date, end_date, horario, cliente):
 
-    data_ad = data[(data['anio'].isin(anio)) & (data['mes'].isin(mes)) & (data['dia'].isin(dia)) & 
-                      (data['hora'].isin(horario)) & (data['CLIENTE'].isin(cliente))]
+    data_ad = data[(data['Fecha'] >= start_date) & (data['Fecha'] <= end_date)]
+    data_ad = data_ad[(data_ad['hora'].isin(horario)) & (data_ad['CLIENTE'].isin(cliente))]
     serie_temperatura = data_ad.groupby('Fecha')['Temperatura'].sum().reset_index()
 
     fig = go.Figure(
@@ -360,10 +334,10 @@ def plot_time_series_temperatura(data, anio, mes, dia, horario, cliente):
 
     return fig
 
-def plot_time_series_presion(data, anio, mes, dia, horario, cliente):
+def plot_time_series_presion(data, start_date, end_date, horario, cliente):
 
-    data_ad = data[(data['anio'].isin(anio)) & (data['mes'].isin(mes)) & (data['dia'].isin(dia)) & 
-                      (data['hora'].isin(horario)) & (data['CLIENTE'].isin(cliente))]
+    data_ad = data[(data['Fecha'] >= start_date) & (data['Fecha'] <= end_date)]
+    data_ad = data_ad[(data_ad['hora'].isin(horario)) & (data_ad['CLIENTE'].isin(cliente))]
     serie_presion = data_ad.groupby('Fecha')['Presion'].sum().reset_index()
 
     fig = go.Figure(
@@ -819,18 +793,19 @@ app.layout = html.Div(
      Output(component_id="plot_series_2", component_property="figure"),
      Output(component_id="plot_series_3", component_property="figure")],
     [#Input("interval", "n_intervals"),
-     Input(component_id="anio-dropdown", component_property="value"),
-     Input(component_id="mes-dropdown", component_property="value"),
-     Input(component_id="dia-dropdown", component_property="value"),
+     Input(component_id='date-picker-range', component_property='start_date'),
+     Input(component_id='date-picker-range', component_property='end_date'),
      Input(component_id="horario-dropdown", component_property="value"),
      Input(component_id="cliente-dropdown", component_property="value")
      ]
 )
-def update_output_div(anio, mes, dia, horario, cliente):
+def update_output_div(start_date_str, end_date_str, horario, cliente):
 
-    fig1 = plot_time_series_volumen(data, anio, mes, dia, horario, cliente)
-    fig2 = plot_time_series_temperatura(data, anio, mes, dia, horario, cliente)
-    fig3 = plot_time_series_presion(data, anio, mes, dia, horario, cliente)
+    start_date = pd.to_datetime(start_date_str)
+    end_date = pd.to_datetime(end_date_str)
+    fig1 = plot_time_series_volumen(data, start_date, end_date, horario, cliente)
+    fig2 = plot_time_series_temperatura(data, start_date, end_date, horario, cliente)
+    fig3 = plot_time_series_presion(data, start_date, end_date, horario, cliente)
     fig4 = plot_bar_volumen_ultimos_7d(data)
     fig5 = plot_bar_temperatura_ultimos_7d(data)
     fig6 = plot_bar_presion_ultimos_7d(data)
