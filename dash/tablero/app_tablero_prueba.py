@@ -119,15 +119,18 @@ def generate_filters():
         ]
     )
 
-def generate_KPI():
+def generate_KPI(data, start_date, end_date, horario, cliente):
     """
     Función para generar 6 KPIs, organizados en 2 filas (3 KPIs por fila).
     :return: Una lista de Divs que representan los 6 KPIs.
     """
+    data_ad = data[(data['Fecha'] >= start_date) & (data['Fecha'] <= end_date)]
+    data_ad = data_ad[(data_ad['hora'].isin(horario)) & (data_ad['CLIENTE'].isin(cliente))]
+
     # Valores de ejemplo para los KPIs
-    volumen_promedio = 20.98
-    presion_promedio = 17.68
-    temperatura_promedio = 27.54
+    volumen_promedio = data_ad['Volumen'].mean()
+    presion_promedio = data_ad['Presion'].mean()
+    temperatura_promedio = data_ad['Temperatura'].mean()
     rango_vol = "20.54 - 21.58"
     rango_pre = "16.00 - 19.85"
     rango_temp = "26.98 - 32.58"
@@ -571,8 +574,8 @@ app.layout = html.Div(
                             children=[
                                 # Espacio para KPIs
                                 html.Div(
-                                    id="kpi-container",
-                                    children = generate_KPI()
+                                    id="kpi-container"
+                                    #children = generate_KPI()
                                 ),
                                 html.Hr(),
                                 
@@ -791,7 +794,8 @@ app.layout = html.Div(
      Output(component_id="plot_time_series_3", component_property="figure"),
      Output(component_id="plot_series_1", component_property="figure"),
      Output(component_id="plot_series_2", component_property="figure"),
-     Output(component_id="plot_series_3", component_property="figure")],
+     Output(component_id="plot_series_3", component_property="figure"),
+     Output(component_id="kpi-container", component_property="children")],
     [#Input("interval", "n_intervals"),
      Input(component_id='date-picker-range', component_property='start_date'),
      Input(component_id='date-picker-range', component_property='end_date'),
@@ -810,7 +814,7 @@ def update_output_div(start_date_str, end_date_str, horario, cliente):
     fig5 = plot_bar_temperatura_ultimos_7d(data)
     fig6 = plot_bar_presion_ultimos_7d(data)
 
-    return fig1, fig2, fig3, fig4, fig5, fig6
+    return fig1, fig2, fig3, fig4, fig5, fig6, generate_KPI(data, start_date, end_date, horario, cliente)
 
 if __name__ == "__main__":
     logger.info("Running dash")
