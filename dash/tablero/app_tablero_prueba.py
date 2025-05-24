@@ -828,7 +828,7 @@ app.layout = html.Div(
                 )
             ]
         ),
-        # Sección para cargar archivo Excel (parte inferior)
+        # Sección para cargar archivo Excel con la info de 20 cientes para la detección de anomalías
         html.Div(
             id="upload-section",
             style={
@@ -860,6 +860,47 @@ app.layout = html.Div(
                     multiple=False
                 ),
                 html.Div(id='output-data-upload')
+            ]
+        ),
+
+
+        # Sección para descargar archivo Excel con la info de consumo de los 20 clientes
+        html.Div(
+            id="download-section",
+            style={
+                "display": "flex",
+                "flexDirection": "column",
+                "alignItems": "center",
+                "justifyContent": "flex-start",  # Cambiado de center a flex-start
+                "padding": "20px",
+                "backgroundColor": "#2c3e50",
+                "color": "#ecf0f1",
+                "textAlign": "center",
+                "minHeight": "300px"  # Asegura altura suficiente
+            },
+            children=[
+                html.H4("Descargar Datos de Consumo"),
+                html.Button(
+                    "Descargar Excel",
+                    id="btn-download-excel",
+                    style={
+                        "color": "#ffffff",
+                        "backgroundColor": "#2980b9",
+                        "border": "none",
+                        "padding": "10px 20px",
+                        "fontSize": "16px",
+                        "borderRadius": "5px",
+                        "cursor": "pointer",
+                        "marginBottom": "15px"  # Esto evita que se corte abajo
+                    }
+                ),
+                html.Div(id="status-msg", style={
+                    "color": "#ffcc00",
+                    "marginTop": "10px",
+                    "fontWeight": "bold",
+                    "fontSize": "16px"
+                }),
+                dcc.Download(id="download-excel")
             ]
         )
     ]
@@ -944,7 +985,7 @@ def update_output_div(start_date_str, end_date_str, horario, cliente):
 
 
 
-@app.callback(
+@app.callback( #Callback para manejar el cargue del archivo xlsx
     Output('output-data-upload', 'children'),
     Input('upload-data', 'contents'),
     State('upload-data', 'filename')
@@ -954,6 +995,58 @@ def update_output(contents, filename):
     if contents is not None:
         return parse_contents(contents, filename)
     return html.Div("Aún no se ha cargado ningún archivo.")
+
+
+
+@app.callback(
+    Output("status-msg", "children", allow_duplicate=True),
+    Input("btn-download-excel", "n_clicks"),
+    prevent_initial_call=True
+)
+def mostrar_mensaje_cargando(n_clicks):
+    return "⏳ Generando archivo..."
+
+
+
+
+@app.callback(
+    Output("download-excel", "data"),
+    Output("status-msg", "children"),
+    Input("btn-download-excel", "n_clicks"),
+    prevent_initial_call=True
+)
+def generar_excel_por_cliente(n_clicks):
+    print("⏳ Generando archivo...")
+
+    output = io.BytesIO()
+    clientes_unicos = sorted(data['CLIENTE'].unique())
+    print(f"➡️ Procesando {len(clientes_unicos)} clientes")
+
+    try:
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            for i, cliente in enumerate(clientes_unicos, start=1):
+                nombre_hoja = f"CLIENTE{i}"
+                df_cliente = data[data['CLIENTE'] == cliente]
+                print(f"✍️ CLIENTE{i}: {len(df_cliente)} filas")
+                df_cliente.to_excel(writer, sheet_name=nombre_hoja, index=False)
+
+        output.seek(0)
+        ahora = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"DatosConsumoClientes_{ahora}.xlsx"
+
+        print(f"✅ Archivo generado: {filename}")
+
+        # Al finalizar, borra el mensaje de estado en la app
+        return dcc.send_bytes(output.read(), filename=filename), ""
+
+    except Exception as e:
+        error_msg = f"❌ Error al generar el archivo: {str(e)}"
+        print(error_msg)
+        return None, error_msg
+
+
+    
+    
 
 
 if __name__ == "__main__":
