@@ -308,7 +308,9 @@ def generate_KPI(data, start_date, end_date, horario, cliente):
 # Función para generar las alertas al comparar con los datos
 # Se puede modificar respecto a como se vaya a manejar
 def generar_alertas(data_new):
-
+    data_new['Presion_orig'] = data_new['Presion']
+    data_new['Temperatura_orig'] = data_new['Temperatura']
+    data_new['Volumen_orig'] = data_new['Volumen']
     data_scaled = escalar_variables(data_new)
     data_scaled.rename(columns = {"Presion": "Presion_resid",
                               "Temperatura": "Temperatura_resid",
@@ -317,51 +319,25 @@ def generar_alertas(data_new):
     
     resultados = predecir_anomalias(data_scaled)
 
+    anomalias = resultados[resultados['anomalia'] == -1]
+    ultimas_anomalias = anomalias.sort_values('Fecha').groupby('CLIENTE').last().reset_index()
     alertas = []
-    ultimos_valores = {
-        'presion': data_new['presion'].iloc[-1],
-        'temperatura': data_new['temperatura'].iloc[-1],
-        'volumen': data_new['volumen'].iloc[-1]
-    }
-    
-    # Solo genera alertas si los valores cambiaron
-    presion_actual = ultimos_valores['presion']
-    if presion_actual < 15:
+
+    for idx, row in ultimas_anomalias.iterrows():
         alertas.append({
-            "tipo": "CRÍTICA",
-            "mensaje": f"Presión peligrosamente baja: {presion_actual} psi",
-            "color": "#e74c3c",
-            "icono": "⚠️"
-        })
-    elif presion_actual < 18:
-        alertas.append({
-            "tipo": "Advertencia",
-            "mensaje": f"Presión por debajo del nivel óptimo: {presion_actual} psi",
-            "color": "#f39c12",
-            "icono": "❗"
+            "tipo": f"Advertencia {row['CLIENTE']}",
+            "mensaje": f"Anomalía detectada en {row['Fecha']} (Vol: {row['Volumen_orig']:.2f}, Pres: {row['Presion_orig']:.2f}, Temp: {row['Temperatura_orig']:.2f})",
+            "color": "#d74d1f", 
+            "icono": "⚠️",  # Icono diferente
+            "timestamp": f"{row['Fecha']}"
         })
     
-    temp_actual = ultimos_valores['temperatura']
-    if temp_actual > 35:
-        alertas.append({
-            "tipo": "CRÍTICA",
-            "mensaje": f"Temperatura crítica: {temp_actual}°C",
-            "color": "#e74c3c",
-            "icono": "🔥"
-        })
+    # Ordenar alertas por timestamp (más reciente primero)
+    alertas.sort(key=lambda x: x['timestamp'], reverse=True)
     
-    vol_actual = ultimos_valores['volumen']
-    vol_mean = data['volumen'].mean()
-    vol_std = data['volumen'].std()
-    if vol_actual > vol_mean + 2*vol_std:
-        alertas.append({
-            "tipo": "Advertencia",
-            "mensaje": f"Volumen anormalmente alto: {vol_actual} (μ={vol_mean:.1f}, σ={vol_std:.1f})",
-            "color": "#f39c12",
-            "icono": "📈"
-        })
+    return  alertas[:20] # Solo las 20 más recientes
+
     
-    return alertas, ultimos_valores
 
 def plot_time_series_volumen(data, start_date, end_date, horario, cliente):
 
@@ -863,56 +839,50 @@ app.layout = html.Div(
     ]
 )
 
-# @app.callback(
-#     [Output('alert-container', 'children'),
-#      Output('alert-store', 'data')],
-#     [Input('alert-interval', 'n_intervals'),
-#      #Input('datos-filtrados', 'data')
-#      ],  # Asume que tienes un Store con los datos
-#     [State('alert-store', 'data')]
-# )
-# def actualizar_alertas(n_intervals, alertas_anteriores):
+@app.callback(
+    Output('alert-container', 'children'),
+    [Input('alert-interval', 'n_intervals')]
+     #Input('datos-filtrados', 'data')]
+)
+def actualizar_alertas(n_intervals):
  
-#     # Generar nuevas alertas
-#     nuevas_alertas, ultimos_valores = generar_alertas(data)
+    # Generar nuevas alertas
+    alertas = generar_alertas(data_new)
     
-#     # Combinar con alertas anteriores (limitar a las últimas 20)
-#     todas_alertas = (nuevas_alertas + alertas_anteriores)[:20]
+    # Generar elementos HTML para las alertas
+    alertas_html = []
+    for alerta in alertas:
+        alerta_html = html.Div(
+            style={
+                "padding": "10px",
+                "marginBottom": "8px",
+                "borderLeft": f"4px solid {alerta['color']}",
+                "backgroundColor": "#252525",
+                "display": "flex",
+                "alignItems": "center"
+            },
+            children=[
+                html.Span(
+                    alerta['icono'],
+                    style={"fontSize": "20px", "marginRight": "10px"}
+                ),
+                html.Div(
+                    children=[
+                        html.Strong(
+                            f"{alerta['tipo']}: ",
+                            style={"color": alerta['color']}
+                        ),
+                        html.Span(alerta['mensaje'])
+                    ]
+                )
+            ]
+        )
+        alertas_html.append(alerta_html)
     
-#     # Generar elementos HTML para las alertas
-#     alertas_html = []
-#     for alerta in todas_alertas:
-#         alerta_html = html.Div(
-#             style={
-#                 "padding": "10px",
-#                 "marginBottom": "8px",
-#                 "borderLeft": f"4px solid {alerta['color']}",
-#                 "backgroundColor": "#252525",
-#                 "display": "flex",
-#                 "alignItems": "center"
-#             },
-#             children=[
-#                 html.Span(
-#                     alerta['icono'],
-#                     style={"fontSize": "20px", "marginRight": "10px"}
-#                 ),
-#                 html.Div(
-#                     children=[
-#                         html.Strong(
-#                             f"{alerta['tipo']}: ",
-#                             style={"color": alerta['color']}
-#                         ),
-#                         html.Span(alerta['mensaje'])
-#                     ]
-#                 )
-#             ]
-#         )
-#         alertas_html.append(alerta_html)
+    if not alertas_html:
+        return [html.Div("No hay alertas recientes", style={"color": "#777"})], []
     
-#     if not alertas_html:
-#         return [html.Div("No hay alertas recientes", style={"color": "#777"})], []
-    
-#     return alertas_html, todas_alertas
+    return alertas_html
         
 @app.callback(
     [Output(component_id="plot_time_series_1", component_property="figure"),
