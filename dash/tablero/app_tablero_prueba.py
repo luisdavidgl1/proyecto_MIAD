@@ -50,7 +50,7 @@ def load_historical_data():
 
 # Cargar los nuevos datos
 def load_new_data():
-    clientes = pd.read_excel('./BASE_MUESTRAS_2K.xlsx', sheet_name=None)  # None carga todas las hojas
+    clientes = pd.read_excel('./NUEVOS_DATOS_DETECCION.xlsx', sheet_name=None)  # None carga todas las hojas
     # Inicializar una lista para cargar los dataframe
     df = []
 
@@ -131,28 +131,6 @@ def predecir_anomalias(df):
         print(f"predicción realizada para cliente: {cliente}")
 
     return resultados_anomalias
-
-
-def parse_contents(contents, filename):
-    content_type, content_string = contents.split(',')
-    decoded = base64.b64decode(content_string)
-
-    try:
-        if filename.endswith('.xlsx'):
-            save_path = os.path.join(os.getcwd(), filename)
-            with open(save_path, 'wb') as f:
-                f.write(decoded)
-            return html.Div([
-                html.P(f"✅ Archivo '{filename}' cargado y guardado correctamente.")
-            ])
-        else:
-            return html.Div([
-                html.P("❌ Formato no válido. Solo se aceptan archivos .xlsx.")
-            ])
-    except Exception as e:
-        return html.Div([
-            html.P(f"❌ Error al guardar el archivo: {str(e)}")
-        ])
 
 
 def generate_filters():
@@ -997,8 +975,31 @@ def update_output(contents, filename):
     return html.Div("Aún no se ha cargado ningún archivo.")
 
 
+def parse_contents(contents, filename):
+    content_type, content_string = contents.split(',')
+    decoded = base64.b64decode(content_string)
 
-@app.callback(
+    try:
+        if filename.endswith('.xlsx'):
+            save_path = os.path.join(os.getcwd(), 'NUEVOS_DATOS_DETECCION.xlsx')
+            with open(save_path, 'wb') as f:
+                f.write(decoded)
+            return html.Div([
+                html.P(f"✅ Archivo '{filename}' cargado y guardado correctamente.")
+            ])
+        else:
+            return html.Div([
+                html.P("❌ Formato no válido. Solo se aceptan archivos .xlsx.")
+            ])
+    except Exception as e:
+        return html.Div([
+            html.P(f"❌ Error al guardar el archivo: {str(e)}")
+        ])
+
+
+
+
+@app.callback( #Callback para manejar la descarga del archivo xlsx con la info de consumo de los clientes
     Output("status-msg", "children", allow_duplicate=True),
     Input("btn-download-excel", "n_clicks"),
     prevent_initial_call=True
