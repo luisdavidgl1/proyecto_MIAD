@@ -207,6 +207,44 @@ def generate_filters():
         ]
     )
 
+def generate_client_filter():
+    """
+    :return: A Div dropdown lists for filters.
+    """
+
+    return html.Div(
+        id="filters-2",
+        children=[
+            # Canal
+            html.H2("Filtro para visualización de anomalías",style={
+                        "textAlign": "Left",
+                        "marginBottom": "20px",
+                        "color": "#FFFFFF",  # Puedes cambiar el color si lo deseas
+                    }),
+            html.Div(
+                id="componentes-filtros-2",
+                children=[
+                    html.Div(
+                        id="componente-cliente-2",
+                        children=[
+                            html.P("Cliente"),
+                            dcc.Dropdown(
+                                id="cliente-dropdown-anomaly",
+                                options=[{'label': cliente, 'value': cliente} for cliente in data['CLIENTE'].unique()],
+                                placeholder="Seleccione un cliente",
+                                value=[data['CLIENTE'].unique()[0]],
+                                multi = False,
+                                style=dict(width='50%', minWidth='300px')
+                            )
+                        ],
+                        style=dict(width='20%')
+                    ),
+                ],
+                style=dict(display='flex',flexDirection='column',gap='10px',marginBottom = '20px') # Organiza los filtros en columna
+            ),
+        ]
+    )
+
 def generate_KPI(data, start_date, end_date, horario, cliente):
     """
     Función para generar 6 KPIs, organizados en 2 filas (3 KPIs por fila).
@@ -339,8 +377,121 @@ def generar_alertas(data_new):
     # Ordenar alertas por timestamp (más reciente primero)
     alertas.sort(key=lambda x: x['timestamp'], reverse=True)
     
-    return  alertas[:20] # Solo las 20 más recientes
+    return  alertas[:20], resultados # Solo las 20 más recientes
 
+def plot_time_series_anomalies_volumen(df, cliente):
+
+    cliente_serie = df[df['CLIENTE']==cliente][['Fecha','Volumen_orig','anomalia']].set_index('Fecha')
+
+    fig = go.Figure()
+
+    fig.add_trace(
+        go.Scatter(
+            x=cliente_serie.index,
+            y=cliente_serie['Volumen_orig'],
+            mode='lines',
+            name='Volumen',
+            line=dict(color='blue')
+        )
+    )
+
+    anomalias = cliente_serie[cliente_serie['anomalia'] == -1]
+    fig.add_trace(
+        go.Scatter(
+            x=anomalias.index,
+            y=anomalias['Volumen_orig'],
+            mode='markers',
+            name='Anomalías',
+            marker=dict(color='red', size=8)
+        )
+    )
+
+    fig.update_layout(
+        title=f'Anomalías detectadas - {cliente} - Variable Volumen',
+        xaxis_title='Fecha',
+        yaxis_title='Volumen',
+        legend_title='Leyenda',
+        hovermode='x unified'
+    )
+
+
+    return fig
+
+def plot_time_series_anomalies_temperatura(df, cliente):
+
+    cliente_serie = df[df['CLIENTE']==cliente][['Fecha','Temperatura_orig','anomalia']].set_index('Fecha')
+
+    fig = go.Figure()
+
+    fig.add_trace(
+        go.Scatter(
+            x=cliente_serie.index,
+            y=cliente_serie['Temperatura_orig'],
+            mode='lines',
+            name='Temperatura',
+            line=dict(color='blue')
+        )
+    )
+
+    anomalias = cliente_serie[cliente_serie['anomalia'] == -1]
+    fig.add_trace(
+        go.Scatter(
+            x=anomalias.index,
+            y=anomalias['Temperatura_orig'],
+            mode='markers',
+            name='Anomalías',
+            marker=dict(color='red', size=8)
+        )
+    )
+
+    fig.update_layout(
+        title=f'Anomalías detectadas - {cliente} - Variable Temperatura',
+        xaxis_title='Fecha',
+        yaxis_title='Temperatura',
+        legend_title='Leyenda',
+        hovermode='x unified'
+    )
+
+
+    return fig
+
+def plot_time_series_anomalies_presion(df, cliente):
+
+    cliente_serie = df[df['CLIENTE']==cliente][['Fecha','Presion_orig','anomalia']].set_index('Fecha')
+
+    fig = go.Figure()
+
+    fig.add_trace(
+        go.Scatter(
+            x=cliente_serie.index,
+            y=cliente_serie['Presion_orig'],
+            mode='lines',
+            name='Presión',
+            line=dict(color='blue')
+        )
+    )
+
+    anomalias = cliente_serie[cliente_serie['anomalia'] == -1]
+    fig.add_trace(
+        go.Scatter(
+            x=anomalias.index,
+            y=anomalias['Presion_orig'],
+            mode='markers',
+            name='Anomalías',
+            marker=dict(color='red', size=8)
+        )
+    )
+
+    fig.update_layout(
+        title=f'Anomalías detectadas - {cliente} - Variable Presión',
+        xaxis_title='Fecha',
+        yaxis_title='Presión',
+        legend_title='Leyenda',
+        hovermode='x unified'
+    )
+
+
+    return fig
     
 
 def plot_time_series_volumen(data, start_date, end_date, horario, cliente):
@@ -741,17 +892,53 @@ app.layout = html.Div(
                         "color": "#FFFFFF",
                     }
                 ),
-                
                 html.Div(
                     className="row",
-                    style={"display": "flex", "justify-content": "center", "margin-top": "20px"},
                     children=[
+                        # Filtros
                         html.Div(
-                            style={"width": "70%"},
-                            children=[dcc.Graph(id="plot_anomalias")]
-                        )
+                            className="three columns",
+                            style={"display": "flex", "justify-content": "center", "align-items": "center", 'height': '70vh'},
+                            children=[generate_client_filter()]
+                            + [
+                                html.Div(
+                                    ["initial child 2"], id="output-clientside-2", style={"display": "none"}
+                                )
+                            ],
+                        ),
+                        
+                        # KPIs y gráficos
+                        html.Div(
+                            className="nine columns",
+                            children=[
+                                # Gráficos de series de tiempo
+                                html.Div(
+                                    className="twelve columns",
+                                    children=[
+                                        html.Div(
+                                            className="six columns",
+                                            children=[dcc.Graph(id='plot_anomalias_1')]
+                                        ),
+                                        html.Div(
+                                            className="six columns",
+                                            children=[dcc.Graph(id='plot_anomalias_2')]
+                                        )
+                                    ]
+                                ),
+                                html.Div(
+                                    className="twelve columns",
+                                    style={"display": "flex", "justify-content": "center", "margin-top": "20px"},
+                                    children=[
+                                        html.Div(
+                                            style={"width": "60%"},
+                                            children=[dcc.Graph(id="plot_anomalias_3")]
+                                        )
+                                    ]
+                                )
+                            ]
+                        ),
                     ]
-                ),
+                )
             ]
         ),
 
@@ -885,14 +1072,18 @@ app.layout = html.Div(
 )
 
 @app.callback(
-    Output('alert-container', 'children'),
-    [Input('alert-interval', 'n_intervals')]
+    [Output('alert-container', 'children'),
+     Output(component_id="plot_anomalias_1", component_property="figure"),
+     Output(component_id="plot_anomalias_2", component_property="figure"),
+     Output(component_id="plot_anomalias_3", component_property="figure")],
+    [Input('alert-interval', 'n_intervals'),
+     Input(component_id="cliente-dropdown-anomaly", component_property="value")]
      #Input('datos-filtrados', 'data')]
 )
-def actualizar_alertas(n_intervals):
+def actualizar_alertas(n_intervals, cliente):
  
     # Generar nuevas alertas
-    alertas = generar_alertas(data_new)
+    alertas, resultados = generar_alertas(data_new)
     
     # Generar elementos HTML para las alertas
     alertas_html = []
@@ -927,7 +1118,11 @@ def actualizar_alertas(n_intervals):
     if not alertas_html:
         return [html.Div("No hay alertas recientes", style={"color": "#777"})], []
     
-    return alertas_html
+    fig1 = plot_time_series_anomalies_volumen(resultados, cliente)
+    fig2 = plot_time_series_anomalies_temperatura(resultados, cliente)
+    fig3 = plot_time_series_anomalies_presion(resultados, cliente)
+    
+    return alertas_html, fig1, fig2, fig3
         
 @app.callback(
     [Output(component_id="plot_time_series_1", component_property="figure"),
