@@ -11,7 +11,10 @@ import requests
 import json
 import os
 from loguru import logger
+import joblib
 from datetime import datetime, timedelta
+import warnings
+warnings.filterwarnings("ignore")
 
 app = dash.Dash(
     __name__,
@@ -22,7 +25,7 @@ app.title = "Dashboard Template"
 server = app.server
 
 # Cargar datos de ejemplo (reemplaza con tus propios datos)
-def load_data():
+def load_historical_data():
     clientes = pd.read_excel('./DATOSCONTUGAS.xlsx', sheet_name=None)  # None carga todas las hojas
     # Inicializar una lista para cargar los dataframe
     df = []
@@ -43,7 +46,88 @@ def load_data():
     
     return df
 
-data = load_data()
+# Cargar los nuevos datos
+def load_new_data():
+    clientes = pd.read_excel('./BASE_MUESTRAS_2K.xlsx', sheet_name=None)  # None carga todas las hojas
+    # Inicializar una lista para cargar los dataframe
+    df = []
+
+    # Crear columna con el nombre del cliente
+    for nombre_cliente, df_cliente in clientes.items():
+        df_cliente['CLIENTE'] = nombre_cliente  # Agregar columna con nombre del cliente
+        df.append(df_cliente)
+
+    # Unir todos los DataFrames en uno solo
+    df = pd.concat(df, ignore_index=True)
+
+    df['anio'] = df['Fecha'].dt.year
+    df['mes'] = df['Fecha'].dt.month
+    df['dia'] = df['Fecha'].dt.day
+    df['hora'] = df['Fecha'].dt.hour
+    df['dia_semana'] = df['Fecha'].dt.dayofweek
+    
+    return df
+
+data_hist = load_historical_data()
+data_new = load_new_data()
+data = pd.concat([data_hist,data_new], ignore_index =True)
+
+# Funciones para predicción y uso de los modelos
+def cargar_recursos(cliente):
+    """Carga modelo y escalador para un cliente específico"""
+    try:
+        # Cargar escalador
+        scaler = joblib.load(f"./escaladores_cliente/scaler_{cliente}.pkl")
+        
+        # Cargar modelo
+        model = joblib.load(f"./modelos_combinados/modelo_IF_{cliente}.pkl")
+            
+        return scaler, model
+    except Exception as e:
+        print(f"Error cargando recursos para {cliente}: {e}")
+        return None, None
+
+def escalar_variables(df):
+    data_scaled = df.copy()
+    clientes = list(data_scaled['CLIENTE'].unique())
+    cols_to_scale = ['Presion', 'Temperatura', 'Volumen']
+
+    for cliente in clientes:
+        mask_cliente = data_scaled['CLIENTE'] == cliente
+        scaler, _ = cargar_recursos(cliente)
+        data_scaled.loc[mask_cliente, cols_to_scale] = scaler.transform(data_scaled.loc[mask_cliente, cols_to_scale])
+        print(f"escalado cliente: {cliente}")
+
+    return data_scaled
+
+def predecir_anomalias(df):
+    resultados_anomalias = pd.DataFrame()
+    clientes = list(df['CLIENTE'].unique())
+    clientes_if = {'CLIENTE15', 'CLIENTE18', 'CLIENTE13', 'CLIENTE10', 'CLIENTE9'}
+
+    for cliente in clientes:
+        df_cliente = df[df['CLIENTE'] == cliente].copy()
+        _, modelo = cargar_recursos(cliente)
+
+        if cliente in clientes_if:
+            features = ['Presion', 'Temperatura', 'Volumen']
+            df_cliente.rename(columns = {"Presion_resid": "Presion",
+                              "Temperatura_resid": "Temperatura",
+                              "Volumen_resid": "Volumen"},
+                             inplace = True)
+            df_cliente['anomalia'] = modelo.predict(df_cliente[features])
+            df_cliente.rename(columns = {"Presion": "Presion_resid",
+                              "Temperatura": "Temperatura_resid",
+                              "Volumen": "Volumen_resid"},
+                             inplace = True)
+        else:
+            features = ['Presion_resid', 'Volumen_resid', 'Temperatura_resid']
+            df_cliente['anomalia'] = modelo.predict(df_cliente[features])
+
+        resultados_anomalias = pd.concat([resultados_anomalias,df_cliente])   
+        print(f"predicción realizada para cliente: {cliente}")
+
+    return resultados_anomalias
 
 def generate_filters():
     """
@@ -223,51 +307,59 @@ def generate_KPI(data, start_date, end_date, horario, cliente):
 
 # Función para generar las alertas al comparar con los datos
 # Se puede modificar respecto a como se vaya a manejar
-def generar_alertas(data, ultimo_estado=None):
+def generar_alertas(data_new):
+
+    data_scaled = escalar_variables(data_new)
+    data_scaled.rename(columns = {"Presion": "Presion_resid",
+                              "Temperatura": "Temperatura_resid",
+                              "Volumen": "Volumen_resid"},
+                             inplace = True)
+    
+    resultados = predecir_anomalias(data_scaled)
+
     alertas = []
     ultimos_valores = {
-        'presion': data['presion'].iloc[-1],
-        'temperatura': data['temperatura'].iloc[-1],
-        'volumen': data['volumen'].iloc[-1]
+        'presion': data_new['presion'].iloc[-1],
+        'temperatura': data_new['temperatura'].iloc[-1],
+        'volumen': data_new['volumen'].iloc[-1]
     }
     
     # Solo genera alertas si los valores cambiaron
-    if ultimo_estado is None or ultimos_valores != ultimo_estado:
-        presion_actual = ultimos_valores['presion']
-        if presion_actual < 15:
-            alertas.append({
-                "tipo": "CRÍTICA",
-                "mensaje": f"Presión peligrosamente baja: {presion_actual} psi",
-                "color": "#e74c3c",
-                "icono": "⚠️"
-            })
-        elif presion_actual < 18:
-            alertas.append({
-                "tipo": "Advertencia",
-                "mensaje": f"Presión por debajo del nivel óptimo: {presion_actual} psi",
-                "color": "#f39c12",
-                "icono": "❗"
-            })
-        
-        temp_actual = ultimos_valores['temperatura']
-        if temp_actual > 35:
-            alertas.append({
-                "tipo": "CRÍTICA",
-                "mensaje": f"Temperatura crítica: {temp_actual}°C",
-                "color": "#e74c3c",
-                "icono": "🔥"
-            })
-        
-        vol_actual = ultimos_valores['volumen']
-        vol_mean = data['volumen'].mean()
-        vol_std = data['volumen'].std()
-        if vol_actual > vol_mean + 2*vol_std:
-            alertas.append({
-                "tipo": "Advertencia",
-                "mensaje": f"Volumen anormalmente alto: {vol_actual} (μ={vol_mean:.1f}, σ={vol_std:.1f})",
-                "color": "#f39c12",
-                "icono": "📈"
-            })
+    presion_actual = ultimos_valores['presion']
+    if presion_actual < 15:
+        alertas.append({
+            "tipo": "CRÍTICA",
+            "mensaje": f"Presión peligrosamente baja: {presion_actual} psi",
+            "color": "#e74c3c",
+            "icono": "⚠️"
+        })
+    elif presion_actual < 18:
+        alertas.append({
+            "tipo": "Advertencia",
+            "mensaje": f"Presión por debajo del nivel óptimo: {presion_actual} psi",
+            "color": "#f39c12",
+            "icono": "❗"
+        })
+    
+    temp_actual = ultimos_valores['temperatura']
+    if temp_actual > 35:
+        alertas.append({
+            "tipo": "CRÍTICA",
+            "mensaje": f"Temperatura crítica: {temp_actual}°C",
+            "color": "#e74c3c",
+            "icono": "🔥"
+        })
+    
+    vol_actual = ultimos_valores['volumen']
+    vol_mean = data['volumen'].mean()
+    vol_std = data['volumen'].std()
+    if vol_actual > vol_mean + 2*vol_std:
+        alertas.append({
+            "tipo": "Advertencia",
+            "mensaje": f"Volumen anormalmente alto: {vol_actual} (μ={vol_mean:.1f}, σ={vol_std:.1f})",
+            "color": "#f39c12",
+            "icono": "📈"
+        })
     
     return alertas, ultimos_valores
 
@@ -732,6 +824,40 @@ app.layout = html.Div(
                     interval=60*1000,  # Chequear cada minuto
                     n_intervals=0
                 )
+            ]
+        ),
+        # Sección para cargar archivo Excel (parte inferior)
+        html.Div(
+            id="upload-section",
+            style={
+                "textAlign": "center",
+                "padding": "20px",
+                "backgroundColor": "#2c3e50",
+                "color": "#ecf0f1"
+            },
+            children=[
+                html.H4("Cargar archivo Excel (.xlsx)"),
+                dcc.Upload(
+                    id='upload-data',
+                    children=html.Div([
+                        'Arrastra y suelta o ',
+                        html.A('selecciona un archivo Excel')
+                    ]),
+                    style={
+                        'width': '60%',
+                        'height': '60px',
+                        'lineHeight': '60px',
+                        'borderWidth': '1px',
+                        'borderStyle': 'dashed',
+                        'borderRadius': '5px',
+                        'textAlign': 'center',
+                        'margin': 'auto',
+                        'color': '#FFFFFF'
+                    },
+                    accept='.xlsx',
+                    multiple=False
+                ),
+                html.Div(id='output-data-upload')
             ]
         )
     ]
