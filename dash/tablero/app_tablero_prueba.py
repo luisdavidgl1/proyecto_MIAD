@@ -14,6 +14,8 @@ from loguru import logger
 import joblib
 from datetime import datetime, timedelta
 import warnings
+import io
+import base64
 warnings.filterwarnings("ignore")
 
 app = dash.Dash(
@@ -100,6 +102,7 @@ def escalar_variables(df):
 
     return data_scaled
 
+
 def predecir_anomalias(df):
     resultados_anomalias = pd.DataFrame()
     clientes = list(df['CLIENTE'].unique())
@@ -128,6 +131,29 @@ def predecir_anomalias(df):
         print(f"predicción realizada para cliente: {cliente}")
 
     return resultados_anomalias
+
+
+def parse_contents(contents, filename):
+    content_type, content_string = contents.split(',')
+    decoded = base64.b64decode(content_string)
+
+    try:
+        if filename.endswith('.xlsx'):
+            save_path = os.path.join(os.getcwd(), filename)
+            with open(save_path, 'wb') as f:
+                f.write(decoded)
+            return html.Div([
+                html.P(f"✅ Archivo '{filename}' cargado y guardado correctamente.")
+            ])
+        else:
+            return html.Div([
+                html.P("❌ Formato no válido. Solo se aceptan archivos .xlsx.")
+            ])
+    except Exception as e:
+        return html.Div([
+            html.P(f"❌ Error al guardar el archivo: {str(e)}")
+        ])
+
 
 def generate_filters():
     """
@@ -899,6 +925,10 @@ def actualizar_alertas(n_intervals):
      Input(component_id="cliente-dropdown", component_property="value")
      ]
 )
+
+
+
+
 def update_output_div(start_date_str, end_date_str, horario, cliente):
 
     start_date = pd.to_datetime(start_date_str)
@@ -911,6 +941,20 @@ def update_output_div(start_date_str, end_date_str, horario, cliente):
     fig6 = plot_bar_presion_ultimos_7d(data)
 
     return fig1, fig2, fig3, fig4, fig5, fig6, generate_KPI(data, start_date, end_date, horario, cliente)
+
+
+
+@app.callback(
+    Output('output-data-upload', 'children'),
+    Input('upload-data', 'contents'),
+    State('upload-data', 'filename')
+)
+def update_output(contents, filename):
+    print("Callback ejecutado con archivo:", filename)
+    if contents is not None:
+        return parse_contents(contents, filename)
+    return html.Div("Aún no se ha cargado ningún archivo.")
+
 
 if __name__ == "__main__":
     logger.info("Running dash")
