@@ -73,6 +73,8 @@ def load_new_data():
 data_hist = load_historical_data()
 data = data_hist.copy()
 data_new = None
+data_descarga = None
+
 
 
 # Funciones para predicción y uso de los modelos
@@ -105,6 +107,8 @@ def escalar_variables(df):
 
 
 def predecir_anomalias(df):
+    global data_descarga
+
     resultados_anomalias = pd.DataFrame()
     clientes = list(df['CLIENTE'].unique())
     clientes_if = {'CLIENTE15', 'CLIENTE18', 'CLIENTE13', 'CLIENTE10', 'CLIENTE9'}
@@ -130,6 +134,18 @@ def predecir_anomalias(df):
 
         resultados_anomalias = pd.concat([resultados_anomalias,df_cliente])   
         print(f"predicción realizada para cliente: {cliente}")
+    
+    #Imprimir estructura de los DataFrames
+    # print("📊 Estructura de 'data':")
+    # print(data.info())
+    # print(data.head())
+
+    # print("📊 Estructura de 'resultados_anomalias':")
+    # print(resultados_anomalias.info())
+    # print(resultados_anomalias.head())
+
+
+    data_descarga = pd.merge(data, resultados_anomalias[['Fecha', 'CLIENTE', 'anomalia']], on=['Fecha', 'CLIENTE'], how='left')
 
     return resultados_anomalias
 
@@ -1230,17 +1246,22 @@ def mostrar_mensaje_cargando(n_clicks):
     prevent_initial_call=True
 )
 def generar_excel_por_cliente(n_clicks):
+    global data_descarga
+    
+    df_export = data_descarga if data_descarga is not None else data
+
+
     print("⏳ Generando archivo...")
 
     output = io.BytesIO()
-    clientes_unicos = sorted(data['CLIENTE'].unique())
+    clientes_unicos = sorted(df_export['CLIENTE'].unique())
     print(f"➡️ Procesando {len(clientes_unicos)} clientes")
 
     try:
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
             for i, cliente in enumerate(clientes_unicos, start=1):
                 nombre_hoja = f"CLIENTE{i}"
-                df_cliente = data[data['CLIENTE'] == cliente]
+                df_cliente = df_export[df_export['CLIENTE'] == cliente]
                 print(f"✍️ CLIENTE{i}: {len(df_cliente)} filas")
                 df_cliente.to_excel(writer, sheet_name=nombre_hoja, index=False)
 
