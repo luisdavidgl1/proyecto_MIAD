@@ -71,8 +71,9 @@ def load_new_data():
     return df
 
 data_hist = load_historical_data()
-data_new = load_new_data()
-data = pd.concat([data_hist,data_new], ignore_index =True)
+data = data_hist.copy()
+data_new = None
+
 
 # Funciones para predicción y uso de los modelos
 def cargar_recursos(cliente):
@@ -985,14 +986,16 @@ app.layout = html.Div(
                 # Almacenamiento para las alertas
                 dcc.Store(id='alert-store', data=[]),
                 
-                # Intervalo para chequeo periódico
-                dcc.Interval(
-                    id='alert-interval',
-                    interval=60*1000,  # Chequear cada minuto
-                    n_intervals=0
-                )
+                # # Intervalo para chequeo periódico
+                # dcc.Interval(
+                #     id='alert-interval',
+                #     interval=60*1000,  # Chequear cada minuto
+                #     n_intervals=0
+                # )
             ]
         ),
+        dcc.Store(id="data-cargada", data=False),
+
         # Sección para cargar archivo Excel con la info de 20 cientes para la detección de anomalías
         html.Div(
             id="upload-section",
@@ -1073,56 +1076,62 @@ app.layout = html.Div(
 
 @app.callback(
     [Output('alert-container', 'children'),
-     Output(component_id="plot_anomalias_1", component_property="figure"),
-     Output(component_id="plot_anomalias_2", component_property="figure"),
-     Output(component_id="plot_anomalias_3", component_property="figure")],
-    [Input('alert-interval', 'n_intervals'),
-     Input(component_id="cliente-dropdown-anomaly", component_property="value")]
-     #Input('datos-filtrados', 'data')]
+     Output("plot_anomalias_1", "figure"),
+     Output("plot_anomalias_2", "figure"),
+     Output("plot_anomalias_3", "figure")],
+    Input("data-cargada", "data"), 
+    Input("cliente-dropdown-anomaly", "value"),
+    prevent_initial_call=True
 )
-def actualizar_alertas(n_intervals, cliente):
- 
-    # Generar nuevas alertas
-    alertas, resultados = generar_alertas(data_new)
+
+def actualizar_alertas(data_cargada, cliente):
+    print(f"🔍 Cliente recibido: {cliente}")
+    global data_new
+
+    if not data_cargada or data_new is None:
+        return html.Div("⚠️ Cargue primero un archivo válido."), dash.no_update, dash.no_update, dash.no_update
     
-    # Generar elementos HTML para las alertas
-    alertas_html = []
-    for alerta in alertas:
-        alerta_html = html.Div(
-            style={
-                "padding": "10px",
-                "marginBottom": "8px",
-                "borderLeft": f"4px solid {alerta['color']}",
-                "backgroundColor": "#252525",
-                "display": "flex",
-                "alignItems": "center"
-            },
-            children=[
-                html.Span(
-                    alerta['icono'],
-                    style={"fontSize": "20px", "marginRight": "10px"}
-                ),
-                html.Div(
-                    children=[
-                        html.Strong(
-                            f"{alerta['tipo']}: ",
-                            style={"color": alerta['color']}
-                        ),
+    
+    
+    try:
+        alertas, resultados = generar_alertas(data_new)
+
+        alertas_html = []
+        for alerta in alertas:
+            alerta_html = html.Div(
+                style={
+                    "padding": "10px",
+                    "marginBottom": "8px",
+                    "borderLeft": f"4px solid {alerta['color']}",
+                    "backgroundColor": "#252525",
+                    "display": "flex",
+                    "alignItems": "center"
+                },
+                children=[
+                    html.Span(
+                        alerta['icono'],
+                        style={"fontSize": "20px", "marginRight": "10px"}
+                    ),
+                    html.Div([
+                        html.Strong(f"{alerta['tipo']}: ", style={"color": alerta['color']}),
                         html.Span(alerta['mensaje'])
-                    ]
-                )
-            ]
-        )
-        alertas_html.append(alerta_html)
-    
-    if not alertas_html:
-        return [html.Div("No hay alertas recientes", style={"color": "#777"})], []
-    
-    fig1 = plot_time_series_anomalies_volumen(resultados, cliente)
-    fig2 = plot_time_series_anomalies_temperatura(resultados, cliente)
-    fig3 = plot_time_series_anomalies_presion(resultados, cliente)
-    
-    return alertas_html, fig1, fig2, fig3
+                    ])
+                ]
+            )
+            alertas_html.append(alerta_html)
+
+        if not alertas_html:
+            alertas_html = [html.Div("✅ No hay alertas recientes", style={"color": "#777"})]
+
+        fig1 = plot_time_series_anomalies_volumen(resultados, cliente)
+        fig2 = plot_time_series_anomalies_temperatura(resultados, cliente)
+        fig3 = plot_time_series_anomalies_presion(resultados, cliente)
+
+        return alertas_html, fig1, fig2, fig3
+
+    except Exception as e:
+        print(f"❌ Error generando alertas: {str(e)}")
+        return html.Div(f"❌ Error generando alertas: {str(e)}"), dash.no_update, dash.no_update, dash.no_update
         
 @app.callback(
     [Output(component_id="plot_time_series_1", component_property="figure"),
@@ -1160,17 +1169,20 @@ def update_output_div(start_date_str, end_date_str, horario, cliente):
 
 @app.callback( #Callback para manejar el cargue del archivo xlsx
     Output('output-data-upload', 'children'),
+    Output('data-cargada', 'data'),
     Input('upload-data', 'contents'),
     State('upload-data', 'filename')
 )
 def update_output(contents, filename):
     print("Callback ejecutado con archivo:", filename)
     if contents is not None:
-        return parse_contents(contents, filename)
-    return html.Div("Aún no se ha cargado ningún archivo.")
+        resultado_div = parse_contents(contents, filename) 
+        return resultado_div,True
+    return html.Div("Aún no se ha cargado ningún archivo."),False
 
 
 def parse_contents(contents, filename):
+    global data_new,data
     content_type, content_string = contents.split(',')
     decoded = base64.b64decode(content_string)
 
@@ -1179,8 +1191,14 @@ def parse_contents(contents, filename):
             save_path = os.path.join(os.getcwd(), 'NUEVOS_DATOS_DETECCION.xlsx')
             with open(save_path, 'wb') as f:
                 f.write(decoded)
+
+            data_new = load_new_data()
+            data = pd.concat([data_hist, data_new], ignore_index=True)
+
             return html.Div([
-                html.P(f"✅ Archivo '{filename}' cargado y guardado correctamente.")
+                html.P(f"✅ Archivo '{filename}' cargado y guardado correctamente."),
+                html.P(f"🧩 Datos nuevos: {len(data_new)} filas"),
+                html.P(f"📊 Total combinado: {len(data)} filas")
             ])
         else:
             return html.Div([
